@@ -6,6 +6,10 @@ struct SettingsView: View {
 
     @AppStorage("keepAwake") private var keepAwake = false
     @AppStorage("sampleIntervalKey") private var sampleHint = true
+    @AppStorage("cycleStartDay") private var cycleStartDay = 1
+    @AppStorage("quotaGB") private var quotaGB = 0.0
+
+    @ObservedObject private var location = LocationPermission.shared
 
     @State private var bgStatus = "未申请"
     @State private var toast: String?
@@ -15,6 +19,38 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    Stepper(value: $cycleStartDay, in: 1...28) {
+                        HStack {
+                            Text("每月起始日")
+                            Spacer()
+                            Text("\(cycleStartDay) 号").foregroundStyle(.secondary)
+                        }
+                    }
+
+                    HStack {
+                        Text("月流量额度")
+                        Spacer()
+                        TextField("0 表示不设", value: $quotaGB, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 110)
+                        Text("GB").foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Text("当前周期")
+                        Spacer()
+                        Text(UsageCycle.current(startDay: cycleStartDay).display)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("套餐周期")
+                } footer: {
+                    Text("按运营商账单周期统计已用流量，首屏会显示「已用 / 额度 / 剩余」。额度只用于本地计算，不会联网。")
+                }
+
                 Section {
                     Toggle(isOn: $keepAwake) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -54,6 +90,17 @@ struct SettingsView: View {
                     row("WiFi 开关能力", wifiPowerText)
                     row("热点开关能力", bridge.isLoaded ? "已预留私有调用" : "仅能跳系统设置")
                     row("越狱环境", JailbreakCheck.isJailbroken ? "已检测到越狱" : "未检测到越狱")
+                    HStack {
+                        Text("定位权限")
+                        Spacer()
+                        Text(location.statusText).font(.caption).foregroundStyle(.secondary)
+                        if location.status == .notDetermined {
+                            Button("申请") { location.requestIfNeeded() }
+                                .font(.caption)
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                    row("WiFi 名称读取", CarrierBridge.currentSSID() != nil ? "正常" : "未读到（需定位授权 + wifi-info 权限）")
                 } header: {
                     Text("能力诊断")
                 } footer: {

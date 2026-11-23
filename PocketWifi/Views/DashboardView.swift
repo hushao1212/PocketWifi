@@ -11,6 +11,9 @@ struct DashboardView: View {
     @State private var rssi: Int?
     @State private var privatePower: Bool?
     @State private var toast: String?
+    @ObservedObject private var location = LocationPermission.shared
+    @AppStorage("cycleStartDay") private var cycleStartDay = 1
+    @AppStorage("quotaGB") private var quotaGB = 0.0
 
     private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
@@ -18,6 +21,7 @@ struct DashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 14) {
+                    cycleCard
                     speedCard
                     signalCard
                     wifiCard
@@ -32,6 +36,7 @@ struct DashboardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 monitor.start()
+                location.requestIfNeeded()
                 refresh()
             }
             .onReceive(refreshTimer) { _ in refresh() }
@@ -50,6 +55,61 @@ struct DashboardView: View {
     }
 
     // MARK: - 卡片
+
+    private var cycleCard: some View {
+        let cycle = UsageCycle.current(startDay: cycleStartDay)
+        let totals = store.totals(in: cycle)
+        let used = totals.received + totals.sent
+        let quotaBytes = UInt64(max(quotaGB, 0) * 1024 * 1024 * 1024)
+        let ratio = quotaBytes > 0 ? Double(used) / Double(quotaBytes) : 0
+        let remaining = quotaBytes > used ? quotaBytes - used : 0
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("本周期用量", systemImage: "gauge")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(cycle.display)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(ByteFormat.size(used))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                if quotaBytes > 0 {
+                    Text("/ \(ByteFormat.size(quotaBytes))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if quotaBytes > 0 {
+                    Text("\(Int(min(ratio, 1) * 100))%")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ratio > 0.9 ? Color.red : Color.secondary)
+                }
+            }
+
+            if quotaBytes > 0 {
+                ProgressView(value: min(ratio, 1))
+                    .tint(ratio > 0.9 ? .red : .accentColor)
+                HStack {
+                    Text("剩余 \(ByteFormat.size(remaining))")
+                    Spacer()
+                    Text("WiFi \(ByteFormat.size(totals.wifi)) · 蜂窝 \(ByteFormat.size(totals.cell))")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("还没设月额度：设置 → 套餐周期 → 月流量额度，填了就会显示剩余量")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .cardStyle()
+    }
 
     private var speedCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -135,7 +195,7 @@ struct DashboardView: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(ssid ?? "未连接 / 无权读取")
+                    Text(ssid ?? ssidFallback)
                         .font(.headline)
                     Text(rssiText)
                         .font(.caption)
@@ -245,6 +305,14 @@ struct DashboardView: View {
     }
 
     // MARK: - 逻辑
+
+    private var ssidFallback: String {
+        switch location.status {
+        case .notDetermined: return "等待定位授权…"
+        case .denied, .restricted: return "定位权限未开启，读不到 WiFi 名称"
+        default: return "未连 WiFi，或缺少 wifi-info 权限"
+        }
+    }
 
     private var rssiText: String {
         guard let rssi else { return "信号强度不可读" }

@@ -37,6 +37,21 @@ final class TrafficStore: ObservableObject {
         days.sorted { $0.day > $1.day }
     }
 
+    /// 按「起始日 ~ 结束日」（yyyy-MM-dd 字符串可字典序比较）汇总一个计费周期。
+    func totals(in cycle: UsageCycle) -> (received: UInt64, sent: UInt64, wifi: UInt64, cell: UInt64) {
+        var received: UInt64 = 0
+        var sent: UInt64 = 0
+        var wifi: UInt64 = 0
+        var cell: UInt64 = 0
+        for day in days where day.day >= cycle.startKey && day.day <= cycle.endKey {
+            received += day.totalIn
+            sent += day.totalOut
+            wifi += day.wifiIn + day.wifiOut
+            cell += day.cellIn + day.cellOut
+        }
+        return (received, sent, wifi, cell)
+    }
+
     func record(wifiIn: UInt64, wifiOut: UInt64, cellIn: UInt64, cellOut: UInt64) {
         let delta = wifiIn + wifiOut + cellIn + cellOut
         guard delta > 0 else { return }
