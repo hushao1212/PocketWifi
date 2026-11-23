@@ -1,0 +1,65 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate --spec project.yml
+          ls -la
+
+      - name: Build unsigned archive
+        run: |
+          xcodebuild archive \
+            -project PocketWifi.xcodeproj \
+            -scheme PocketWifi \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO
+
+      - name: Package IPA
+        run: |
+          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/PocketWifi.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::未找到 PocketWifi.app，archive 产物路径不对"
+            ls -R "$RUNNER_TEMP/App.xcarchive/Products" || true
+            exit 1
+          fi
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qry PocketWifi.ipa Payload
+          ls -lh PocketWifi.ipa
+          echo "MIN_OS=$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' Payload/PocketWifi.app/Info.plist)"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketWifi-ipa
+          path: ${{ runner.temp }}/PocketWifi.ipa
+          if-no-files-found: error
+          retention-days: 30
